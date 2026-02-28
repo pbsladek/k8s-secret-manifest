@@ -3,8 +3,9 @@
 A CLI tool for generating, managing, and sealing Kubernetes Secret manifests.
 
 - Generate valid `Secret` YAML with automatic base64 encoding
-- Import secrets from `.env` files
-- Update, inspect, and diff existing secret files
+- Import from / export to `.env` files
+- Update, rotate, copy, inspect, diff, and validate existing secret files
+- Edit Secret values interactively in `$EDITOR`
 - Manage paired index-list keys (e.g. Bitnami pgpool-style semicolon-separated lists)
 - Seal secrets with [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) (`kubeseal`)
 
@@ -94,7 +95,7 @@ k8s-secret-manifest generate --name pgpool-secret \
 
 ### `from-env` — Generate a Secret from a `.env` file
 
-Blank lines and `#` comments are skipped. The `export ` prefix is stripped. Values surrounded by single or double quotes are unquoted.
+Blank lines and `#` comments are skipped. The `export ` prefix is stripped. Values surrounded by single or double quotes are unquoted. See `export-env` for the inverse operation.
 
 ```bash
 k8s-secret-manifest from-env --name my-secret \
@@ -149,6 +150,70 @@ k8s-secret-manifest update --input secret.yaml \
 
 ---
 
+### `rotate` — Rotate keys with new random values
+
+Replaces one or more data keys with cryptographically random values and updates the file in place. The new plain-text values are printed to stderr so they can be recorded.
+
+```bash
+# Rotate a single key (32-char alphanumeric, default)
+k8s-secret-manifest rotate --input secret.yaml --key API_KEY
+
+# Rotate multiple keys as 64-char hex strings
+k8s-secret-manifest rotate --input secret.yaml \
+  --key DB_PASS --key JWT_SECRET \
+  --length 64 --charset hex
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--input` | `-i` | Input secret manifest file (required) |
+| `--output` | `-o` | Output file path (default: same as `--input`) |
+| `--key` | `-k` | Key to rotate; repeatable (required) |
+| `--length` | `-l` | Length of generated value (default: `32`) |
+| `--charset` | `-c` | `alphanumeric` (default), `hex`, or `base64url` |
+
+---
+
+### `export-env` — Export a Secret as a `.env` file
+
+Decodes a Secret manifest and writes it as `KEY=value` lines. Values that contain spaces, quotes, or other shell-significant characters are automatically double-quoted. This is the inverse of `from-env`.
+
+```bash
+# Write to a .env file
+k8s-secret-manifest export-env --input secret.yaml --output .env
+
+# Print to stdout (e.g. for piping)
+k8s-secret-manifest export-env --input secret.yaml
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--input` | `-i` | Input secret manifest file (required) |
+| `--output` | `-o` | Output `.env` file path (default: stdout) |
+
+---
+
+### `copy` — Clone a Secret with a new name and/or namespace
+
+Copies all data keys, labels, annotations, type, and immutable flag to a new Secret. Uses the global `--namespace` flag for the target namespace.
+
+```bash
+# Rename within the same namespace
+k8s-secret-manifest copy --input secret.yaml --name new-secret --output new-secret.yaml
+
+# Promote to a different namespace
+k8s-secret-manifest copy --input secret.yaml --name prod-secret \
+  --namespace production --output prod-secret.yaml
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--input` | `-i` | Input secret manifest file (required) |
+| `--name` | `-N` | New secret name (required) |
+| `--output` | `-o` | Output file path (default: stdout) |
+
+---
+
 ### `show` — Decode and display a Secret manifest
 
 ```bash
@@ -194,6 +259,44 @@ k8s-secret-manifest diff --from secret-v1.yaml --to secret-v2.yaml --unchanged
 | `--from` | `-A` | Base secret file (required) |
 | `--to` | `-B` | New secret file (required) |
 | `--unchanged` | | Also show unchanged keys |
+
+---
+
+### `validate` — Validate a Secret manifest
+
+Check a Secret manifest for spec violations and likely mistakes.
+
+```bash
+k8s-secret-manifest validate --input secret.yaml
+```
+
+Errors indicate spec violations (invalid name/namespace, missing required keys for the secret type).
+Warnings indicate likely mistakes (empty data section, missing recommended keys).
+
+Color output is enabled by default; set `NO_COLOR=1` to disable.
+
+| Flag | Short | Description |
+|---|---|---|
+| `--input` | `-i` | Input secret manifest file (required) |
+
+---
+
+### `edit` — Edit Secret values interactively
+
+Opens the decoded Secret values in `$EDITOR` as a `.env`-style file. On save and exit the values are re-encoded and the manifest is updated.
+
+```bash
+# Edit in $EDITOR (falls back to vi)
+k8s-secret-manifest edit --input secret.yaml
+
+# Use a specific editor and write to a different file
+EDITOR=nano k8s-secret-manifest edit --input secret.yaml --output new-secret.yaml
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--input` | `-i` | Input secret manifest file (required) |
+| `--output` | `-o` | Output file path (default: same as `--input`) |
 
 ---
 

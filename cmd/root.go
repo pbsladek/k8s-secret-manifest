@@ -27,13 +27,18 @@ func init() {
 
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(fromEnvCmd)
+	rootCmd.AddCommand(exportEnvCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(rotateCmd)
+	rootCmd.AddCommand(copyCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(sealCmd)
 	rootCmd.AddCommand(addEntryCmd)
 	rootCmd.AddCommand(removeEntryCmd)
+	rootCmd.AddCommand(validateCmd)
+	rootCmd.AddCommand(editCmd)
 }
 
 // writeOutput writes data to a file or stdout.

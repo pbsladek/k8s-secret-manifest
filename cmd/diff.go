@@ -104,11 +104,10 @@ func runDiff(cmd *cobra.Command, _ []string) error {
 	// Diff data
 	changed := 0
 	for _, k := range keys {
-		aVal, _ := manifest.GetPlainValue(a, k)
-		bVal, _ := manifest.GetPlainValue(b, k)
-
 		_, inA := a.Data[k]
 		_, inB := b.Data[k]
+		aVal := string(a.Data[k])
+		bVal := string(b.Data[k])
 
 		switch {
 		case inA && !inB:

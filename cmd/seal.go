@@ -126,6 +126,10 @@ func sealSecret(secretYAML []byte, opts sealOptions) ([]byte, error) {
 		return nil, fmt.Errorf("kubeseal produced no output")
 	}
 
+	// Forward any warnings kubeseal printed to stderr even on success.
+	if msg := stderr.String(); msg != "" {
+		fmt.Fprint(os.Stderr, msg)
+	}
 	fmt.Fprintf(os.Stderr, "Sealed successfully\n")
 	return out, nil
 }
