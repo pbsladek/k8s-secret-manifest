@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/pbsladek/k8s-secret-manifest/internal/manifest"
+	"github.com/pbsladek/k8s-secret-manifest/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -67,7 +68,12 @@ func runFromEnv(cmd *cobra.Command, _ []string) error {
 	immutable, _ := cmd.Flags().GetBool("immutable")
 	sets, _ := cmd.Flags().GetStringArray("set")
 
-	pairs, err := parseEnvFile(envFile)
+	safeEnvFile, err := safePath("--env-file", envFile)
+	if err != nil {
+		return err
+	}
+
+	pairs, err := parseEnvFile(safeEnvFile)
 	if err != nil {
 		return fmt.Errorf("parse env file: %w", err)
 	}
@@ -100,6 +106,9 @@ func runFromEnv(cmd *cobra.Command, _ []string) error {
 	}
 
 	for k, v := range pairs {
+		if err := validate.ValidateDataKey(k); err != nil {
+			return fmt.Errorf("env file: %w", err)
+		}
 		manifest.SetPlainValue(s, k, v)
 	}
 
@@ -108,6 +117,9 @@ func runFromEnv(cmd *cobra.Command, _ []string) error {
 		k, v, err := splitKeyValue(kv)
 		if err != nil {
 			return err
+		}
+		if err := validate.ValidateDataKey(k); err != nil {
+			return fmt.Errorf("--set: %w", err)
 		}
 		manifest.SetPlainValue(s, k, v)
 	}

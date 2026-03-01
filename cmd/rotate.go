@@ -15,6 +15,8 @@ const (
 	charsetAlphanumeric = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	charsetHex          = "0123456789abcdef"
 	charsetBase64URL    = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+
+	maxRotateLength = 4096
 )
 
 var rotateCmd = &cobra.Command{
@@ -47,7 +49,7 @@ func init() {
 	_ = rotateCmd.MarkFlagRequired("key")
 
 	rotateCmd.Flags().IntP("length", "l", 32,
-		"Length of the generated value in characters")
+		"Length of the generated value in characters (max 4096)")
 	rotateCmd.Flags().StringP("charset", "c", "alphanumeric",
 		"Character set for generated value: alphanumeric, hex, base64url")
 }
@@ -63,34 +65,45 @@ func runRotate(cmd *cobra.Command, _ []string) error {
 		outputPath = inputPath
 	}
 
+	if length > maxRotateLength {
+		return fmt.Errorf("--length %d exceeds maximum of %d", length, maxRotateLength)
+	}
+
 	charset, err := resolveCharset(charsetName)
 	if err != nil {
 		return err
 	}
 
-	s, err := manifest.FromFile(inputPath)
+	safeInput, err := safePath("--input", inputPath)
 	if err != nil {
-		return fmt.Errorf("load secret: %w", err)
-	}
-
-	for _, key := range keys {
-		if _, ok := s.Data[key]; !ok {
-			return fmt.Errorf("key %q not found in secret data", key)
-		}
-		val, err := randomString(length, charset)
-		if err != nil {
-			return fmt.Errorf("generate value for %q: %w", key, err)
-		}
-		manifest.SetPlainValue(s, key, val)
-		fmt.Fprintf(os.Stderr, "%s=%s\n", key, val)
-	}
-
-	if err := writeSecretTo(outputPath, s); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "Rotated %d key(s) in %s\n", len(keys), outputPath)
-	return nil
+	return withExclusiveLock(outputPath, func() error {
+		s, err := manifest.FromFile(safeInput)
+		if err != nil {
+			return fmt.Errorf("load secret: %w", err)
+		}
+
+		for _, key := range keys {
+			if _, ok := s.Data[key]; !ok {
+				return fmt.Errorf("key %q not found in secret data", key)
+			}
+			val, err := randomString(length, charset)
+			if err != nil {
+				return fmt.Errorf("generate value for %q: %w", key, err)
+			}
+			manifest.SetPlainValue(s, key, val)
+			fmt.Fprintf(os.Stderr, "%s=%s\n", key, val)
+		}
+
+		if err := writeSecretTo(outputPath, s); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "Rotated %d key(s) in %s\n", len(keys), outputPath)
+		return nil
+	})
 }
 
 // resolveCharset returns the character set string for the given name.

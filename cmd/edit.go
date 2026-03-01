@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 
 	"github.com/pbsladek/k8s-secret-manifest/internal/manifest"
+	"github.com/pbsladek/k8s-secret-manifest/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -43,18 +45,34 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 		outputPath = inputPath
 	}
 
-	s, err := manifest.FromFile(inputPath)
+	safeInput, err := safePath("--input", inputPath)
+	if err != nil {
+		return err
+	}
+
+	editor, err := resolveEditor()
+	if err != nil {
+		return err
+	}
+
+	s, err := manifest.FromFile(safeInput)
 	if err != nil {
 		return fmt.Errorf("load secret: %w", err)
 	}
 
-	// Write decoded values to a temp .env file.
-	tmpFile, err := os.CreateTemp("", "k8s-secret-edit-*.env")
+	// Create a private temp directory (mode 0700) so other local users cannot
+	// observe or tamper with the decoded secret while the editor is open.
+	tmpDir, err := os.MkdirTemp("", "k8s-secret-edit-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	tmpPath := filepath.Join(tmpDir, "secret.env")
+	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	defer func() { _ = os.Remove(tmpPath) }()
 
 	keys := make([]string, 0, len(s.Data))
 	for k := range s.Data {
@@ -73,7 +91,6 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Launch editor.
-	editor := resolveEditor()
 	editorCmd := exec.Command(editor, tmpPath) //nolint:gosec
 	editorCmd.Stdin = os.Stdin
 	editorCmd.Stdout = os.Stdout
@@ -90,6 +107,9 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 
 	s.Data = make(map[string][]byte)
 	for k, v := range edited {
+		if err := validate.ValidateDataKey(k); err != nil {
+			return fmt.Errorf("edited file: %w", err)
+		}
 		manifest.SetPlainValue(s, k, v)
 	}
 
@@ -101,10 +121,16 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// resolveEditor returns the user's preferred editor from $EDITOR, defaulting to vi.
-func resolveEditor() string {
-	if e := os.Getenv("EDITOR"); e != "" {
-		return e
+// resolveEditor looks up the user's preferred editor from $EDITOR and returns
+// its absolute path. Falls back to "vi" if $EDITOR is unset.
+func resolveEditor() (string, error) {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
 	}
-	return "vi"
+	resolved, err := exec.LookPath(editor)
+	if err != nil {
+		return "", fmt.Errorf("editor %q not found in PATH: %w", editor, err)
+	}
+	return resolved, nil
 }

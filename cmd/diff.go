@@ -42,11 +42,20 @@ func runDiff(cmd *cobra.Command, _ []string) error {
 	toPath, _ := cmd.Flags().GetString("to")
 	showUnchanged, _ := cmd.Flags().GetBool("unchanged")
 
-	a, err := manifest.FromFile(fromPath)
+	safeFrom, err := safePath("--from", fromPath)
+	if err != nil {
+		return err
+	}
+	safeTo, err := safePath("--to", toPath)
+	if err != nil {
+		return err
+	}
+
+	a, err := manifest.FromFile(safeFrom)
 	if err != nil {
 		return fmt.Errorf("load --from: %w", err)
 	}
-	b, err := manifest.FromFile(toPath)
+	b, err := manifest.FromFile(safeTo)
 	if err != nil {
 		return fmt.Errorf("load --to: %w", err)
 	}
@@ -73,8 +82,8 @@ func runDiff(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Header
-	fmt.Printf("--- %s (%s/%s  type: %s)\n", fromPath, a.Namespace, a.Name, a.Type)
-	fmt.Printf("+++ %s (%s/%s  type: %s)\n", toPath, b.Namespace, b.Name, b.Type)
+	fmt.Printf("--- %s (%s/%s  type: %s)\n", safeFrom, a.Namespace, a.Name, a.Type)
+	fmt.Printf("+++ %s (%s/%s  type: %s)\n", safeTo, b.Namespace, b.Name, b.Type)
 
 	// Metadata differences
 	if a.Name != b.Name {

@@ -1,0 +1,10 @@
+# Build output
+k8s-secret-manifest
+dist/
+coverage.out
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store

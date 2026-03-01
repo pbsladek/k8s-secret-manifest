@@ -6,22 +6,37 @@ import (
 )
 
 func TestResolveEditor_FromEnv(t *testing.T) {
-	t.Setenv("EDITOR", "nano")
-	if got := resolveEditor(); got != "nano" {
-		t.Errorf("expected %q, got %q", "nano", got)
+	t.Setenv("EDITOR", "sh") // sh is universally available
+	got, err := resolveEditor()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == "" {
+		t.Error("expected non-empty editor path")
 	}
 }
 
 func TestResolveEditor_Default(t *testing.T) {
 	os.Unsetenv("EDITOR")
-	if got := resolveEditor(); got != "vi" {
-		t.Errorf("expected default %q, got %q", "vi", got)
+	// Empty EDITOR falls back to "vi"; result depends on the test environment.
+	got, err := resolveEditor()
+	if err == nil && got == "" {
+		t.Error("expected non-empty path when no error")
 	}
 }
 
 func TestResolveEditor_EmptyEnvFallsBack(t *testing.T) {
 	t.Setenv("EDITOR", "")
-	if got := resolveEditor(); got != "vi" {
-		t.Errorf("empty EDITOR should fall back to vi, got %q", got)
+	got, err := resolveEditor()
+	if err == nil && got == "" {
+		t.Error("expected non-empty path when no error")
+	}
+}
+
+func TestResolveEditor_InvalidEditor(t *testing.T) {
+	t.Setenv("EDITOR", "definitely-not-a-real-editor-binary-xyz")
+	_, err := resolveEditor()
+	if err == nil {
+		t.Error("expected error for non-existent editor binary")
 	}
 }

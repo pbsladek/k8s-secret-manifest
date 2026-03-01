@@ -11,6 +11,7 @@ import (
 
 	"github.com/pbsladek/k8s-secret-manifest/internal/entrylist"
 	"github.com/pbsladek/k8s-secret-manifest/internal/manifest"
+	"github.com/pbsladek/k8s-secret-manifest/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -150,6 +151,9 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		if err := validate.ValidateDataKey(k); err != nil {
+			return fmt.Errorf("--set: %w", err)
+		}
 		manifest.SetPlainValue(s, k, v)
 	}
 
@@ -183,6 +187,12 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 		if entriesKey == "" || entriesVal == "" {
 			return fmt.Errorf("--entries-key and --entries-val are both required when using --entry flags")
 		}
+		if err := validate.ValidateDataKey(entriesKey); err != nil {
+			return fmt.Errorf("--entries-key: %w", err)
+		}
+		if err := validate.ValidateDataKey(entriesVal); err != nil {
+			return fmt.Errorf("--entries-val: %w", err)
+		}
 		entries, err := parseEntryFlags(entryFlags)
 		if err != nil {
 			return err
@@ -207,6 +217,13 @@ func applySetFiles(s *corev1.Secret, setFiles []string) error {
 		if err != nil {
 			return fmt.Errorf("--set-file: %w", err)
 		}
+		if err := validate.ValidateDataKey(k); err != nil {
+			return fmt.Errorf("--set-file: %w", err)
+		}
+		path, err = safePath("--set-file", path)
+		if err != nil {
+			return err
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("--set-file %s: %w", k, err)
@@ -222,11 +239,20 @@ func applySetFiles(s *corev1.Secret, setFiles []string) error {
 // applyTLS reads cert and key files and configures the secret as kubernetes.io/tls.
 // The explicit --type flag takes precedence if the user set it.
 func applyTLS(s *corev1.Secret, certPath, keyPath, explicitType string) error {
-	cert, err := os.ReadFile(certPath)
+	cleanCert, err := safePath("--tls-cert", certPath)
+	if err != nil {
+		return err
+	}
+	cleanKey, err := safePath("--tls-key", keyPath)
+	if err != nil {
+		return err
+	}
+
+	cert, err := os.ReadFile(cleanCert)
 	if err != nil {
 		return fmt.Errorf("--tls-cert: %w", err)
 	}
-	key, err := os.ReadFile(keyPath)
+	key, err := os.ReadFile(cleanKey)
 	if err != nil {
 		return fmt.Errorf("--tls-key: %w", err)
 	}

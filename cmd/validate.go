@@ -37,7 +37,12 @@ func init() {
 func runValidate(cmd *cobra.Command, _ []string) error {
 	inputPath, _ := cmd.Flags().GetString("input")
 
-	s, err := manifest.FromFile(inputPath)
+	safeInput, err := safePath("--input", inputPath)
+	if err != nil {
+		return err
+	}
+
+	s, err := manifest.FromFile(safeInput)
 	if err != nil {
 		return fmt.Errorf("load secret: %w", err)
 	}

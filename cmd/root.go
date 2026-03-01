@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -47,7 +48,11 @@ func writeOutput(path string, data []byte) error {
 		_, err := os.Stdout.Write(data)
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	safe, err := safePath("--output", path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(safe, data, 0600)
 }
 
 // splitKeyValue parses "key=value", allowing "=" in the value portion.
@@ -57,4 +62,14 @@ func splitKeyValue(kv string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid key=value format: %q (missing '=')", kv)
 	}
 	return kv[:idx], kv[idx+1:], nil
+}
+
+// safePath cleans path and rejects relative paths that escape the current
+// working directory via ".." components. Absolute paths are accepted as-is.
+func safePath(flag, path string) (string, error) {
+	clean := filepath.Clean(path)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s: path %q escapes current directory", flag, path)
+	}
+	return clean, nil
 }

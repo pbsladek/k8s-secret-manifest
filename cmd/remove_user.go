@@ -74,34 +74,41 @@ func runRemoveEntry(cmd *cobra.Command, _ []string) error {
 		outputPath = inputPath
 	}
 
-	s, err := manifest.FromFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("load secret: %w", err)
-	}
-
-	entries, err := loadEntries(s, entriesKey, entriesVal, sep)
+	safeInput, err := safePath("--input", inputPath)
 	if err != nil {
 		return err
 	}
 
-	var removed string
-	if key != "" {
-		entries, err = entrylist.Remove(entries, key)
-		removed = key
-	} else {
-		entries, err = entrylist.RemoveByValue(entries, value)
-		removed = value
-	}
-	if err != nil {
-		return err
-	}
+	return withExclusiveLock(outputPath, func() error {
+		s, err := manifest.FromFile(safeInput)
+		if err != nil {
+			return fmt.Errorf("load secret: %w", err)
+		}
 
-	storeEntries(s, entriesKey, entriesVal, sep, entries)
+		entries, err := loadEntries(s, entriesKey, entriesVal, sep)
+		if err != nil {
+			return err
+		}
 
-	if err := writeSecretTo(outputPath, s); err != nil {
-		return err
-	}
+		var removed string
+		if key != "" {
+			entries, err = entrylist.Remove(entries, key)
+			removed = key
+		} else {
+			entries, err = entrylist.RemoveByValue(entries, value)
+			removed = value
+		}
+		if err != nil {
+			return err
+		}
 
-	fmt.Fprintf(os.Stderr, "Removed entry %q from %s\n", removed, outputPath)
-	return nil
+		storeEntries(s, entriesKey, entriesVal, sep, entries)
+
+		if err := writeSecretTo(outputPath, s); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "Removed entry %q from %s\n", removed, outputPath)
+		return nil
+	})
 }

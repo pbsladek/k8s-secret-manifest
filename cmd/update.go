@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/pbsladek/k8s-secret-manifest/internal/manifest"
+	"github.com/pbsladek/k8s-secret-manifest/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -60,60 +61,70 @@ func runUpdate(cmd *cobra.Command, _ []string) error {
 		outputPath = inputPath
 	}
 
-	s, err := manifest.FromFile(inputPath)
+	safeInput, err := safePath("--input", inputPath)
 	if err != nil {
-		return fmt.Errorf("load secret: %w", err)
+		return err
 	}
 
-	for _, kv := range sets {
-		k, v, err := splitKeyValue(kv)
+	return withExclusiveLock(outputPath, func() error {
+		s, err := manifest.FromFile(safeInput)
 		if err != nil {
+			return fmt.Errorf("load secret: %w", err)
+		}
+
+		for _, kv := range sets {
+			k, v, err := splitKeyValue(kv)
+			if err != nil {
+				return err
+			}
+			if err := validate.ValidateDataKey(k); err != nil {
+				return fmt.Errorf("--set: %w", err)
+			}
+			manifest.SetPlainValue(s, k, v)
+		}
+
+		if err := applySetFiles(s, setFiles); err != nil {
 			return err
 		}
-		manifest.SetPlainValue(s, k, v)
-	}
 
-	if err := applySetFiles(s, setFiles); err != nil {
-		return err
-	}
-
-	for _, key := range deleteKeys {
-		if _, ok := s.Data[key]; !ok {
-			return fmt.Errorf("--delete-key %q: key not found in secret data", key)
-		}
-		delete(s.Data, key)
-	}
-
-	if len(labels) > 0 {
-		if s.Labels == nil {
-			s.Labels = make(map[string]string)
-		}
-		for _, l := range labels {
-			k, v, err := splitKeyValue(l)
-			if err != nil {
-				return fmt.Errorf("--label: %w", err)
+		for _, key := range deleteKeys {
+			if _, ok := s.Data[key]; !ok {
+				return fmt.Errorf("--delete-key %q: key not found in secret data", key)
 			}
-			s.Labels[k] = v
+			delete(s.Data, key)
 		}
-	}
 
-	if len(annotations) > 0 {
-		if s.Annotations == nil {
-			s.Annotations = make(map[string]string)
-		}
-		for _, a := range annotations {
-			k, v, err := splitKeyValue(a)
-			if err != nil {
-				return fmt.Errorf("--annotation: %w", err)
+		if len(labels) > 0 {
+			if s.Labels == nil {
+				s.Labels = make(map[string]string)
 			}
-			s.Annotations[k] = v
+			for _, l := range labels {
+				k, v, err := splitKeyValue(l)
+				if err != nil {
+					return fmt.Errorf("--label: %w", err)
+				}
+				s.Labels[k] = v
+			}
 		}
-	}
 
-	if err := writeSecretTo(outputPath, s); err != nil {
-		return err
-	}
+		if len(annotations) > 0 {
+			if s.Annotations == nil {
+				s.Annotations = make(map[string]string)
+			}
+			for _, a := range annotations {
+				k, v, err := splitKeyValue(a)
+				if err != nil {
+					return fmt.Errorf("--annotation: %w", err)
+				}
+				s.Annotations[k] = v
+			}
+		}
 
-	fmt.Fprintf(os.Stderr, "Updated %s\n", outputPath)
-	return nil
+		if err := writeSecretTo(outputPath, s); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "Updated %s\n", outputPath)
+		return nil
+	})
 }

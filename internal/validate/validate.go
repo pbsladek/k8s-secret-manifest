@@ -80,6 +80,15 @@ func checkNamespace(s *corev1.Secret) []Issue {
 	return nil
 }
 
+// ValidateDataKey returns an error if key is not a valid Kubernetes Secret data key.
+// Valid keys match ^[-._a-zA-Z0-9]+$.
+func ValidateDataKey(key string) error {
+	if !dataKeyRe.MatchString(key) {
+		return fmt.Errorf("data key %q contains invalid characters (allowed: alphanumeric, '-', '_', '.')", key)
+	}
+	return nil
+}
+
 func checkDataKeys(s *corev1.Secret) []Issue {
 	var issues []Issue
 	if len(s.Data) == 0 {

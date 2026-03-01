@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,16 +57,29 @@ func runSeal(cmd *cobra.Command, _ []string) error {
 	scope, _ := cmd.Flags().GetString("scope")
 	kubesealPath, _ := cmd.Root().PersistentFlags().GetString("kubeseal-path")
 
-	secretYAML, err := os.ReadFile(inputPath)
+	safeInput, err := safePath("--input", inputPath)
 	if err != nil {
-		return fmt.Errorf("read input file %q: %w", inputPath, err)
+		return err
+	}
+
+	safeCert := ""
+	if certPath != "" {
+		safeCert, err = safePath("--cert", certPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	secretYAML, err := os.ReadFile(safeInput)
+	if err != nil {
+		return fmt.Errorf("read input file %q: %w", safeInput, err)
 	}
 
 	sealed, err := sealSecret(secretYAML, sealOptions{
 		kubesealPath:        kubesealPath,
 		controllerName:      controllerName,
 		controllerNamespace: controllerNamespace,
-		certPath:            certPath,
+		certPath:            safeCert,
 		scope:               scope,
 	})
 	if err != nil {
@@ -87,6 +99,15 @@ type sealOptions struct {
 
 // sealSecret pipes secretYAML through kubeseal and returns the SealedSecret YAML.
 func sealSecret(secretYAML []byte, opts sealOptions) ([]byte, error) {
+	resolved, err := exec.LookPath(opts.kubesealPath)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"kubeseal not found at %q; install it or set --kubeseal-path\n"+
+				"  https://github.com/bitnami-labs/sealed-secrets#installation",
+			opts.kubesealPath,
+		)
+	}
+
 	args := []string{
 		"--format", "yaml",
 		"--controller-name", opts.controllerName,
@@ -99,7 +120,7 @@ func sealSecret(secretYAML []byte, opts sealOptions) ([]byte, error) {
 		args = append(args, "--cert", opts.certPath)
 	}
 
-	cmd := exec.Command(opts.kubesealPath, args...)
+	cmd := exec.Command(resolved, args...) //nolint:gosec
 	cmd.Stdin = bytes.NewReader(secretYAML)
 
 	var stderr bytes.Buffer
@@ -107,14 +128,6 @@ func sealSecret(secretYAML []byte, opts sealOptions) ([]byte, error) {
 
 	out, err := cmd.Output()
 	if err != nil {
-		var execErr *exec.Error
-		if errors.As(err, &execErr) && errors.Is(execErr.Err, exec.ErrNotFound) {
-			return nil, fmt.Errorf(
-				"kubeseal not found at %q; install it or set --kubeseal-path\n"+
-					"  https://github.com/bitnami-labs/sealed-secrets#installation",
-				opts.kubesealPath,
-			)
-		}
 		msg := stderr.String()
 		if msg == "" {
 			msg = err.Error()

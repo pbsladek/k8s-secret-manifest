@@ -1,4 +1,4 @@
-.PHONY: all fmt vet lint test build clean
+.PHONY: all fmt vet lint test test-integration test-all build clean tidy
 
 # Default target: format, vet, and test
 all: fmt vet test
@@ -39,6 +39,13 @@ test:
 test-short:
 	go test ./...
 
+## test-integration: compile the binary and run e2e integration tests
+test-integration:
+	go test -v -tags integration -count=1 ./e2e/
+
+## test-all: run unit tests followed by integration tests
+test-all: test test-integration
+
 ## cover: run tests and show coverage
 cover:
 	go test ./... -coverprofile=coverage.out
@@ -51,6 +58,11 @@ cover-html: cover
 ## release-dry-run: run goreleaser in snapshot mode (no publish)
 release-dry-run:
 	goreleaser release --snapshot --clean
+
+## tidy: tidy and verify go modules
+tidy:
+	go mod tidy
+	go mod verify
 
 ## clean: remove build artefacts
 clean:
